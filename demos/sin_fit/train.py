@@ -166,5 +166,5 @@ if __name__ == '__main__':
 
     # 导出 ONNX
     dummy_input = torch.randn(1,1).to(device)
-    torch.onnx.export(model, dummy_input, "mlp_sin.onnx",
-                    input_names=["x"], output_names=["y"]) """
+    torch.onnx.export(model, dummy_input, "outputs/mlp_sin.onnx",
+                      input_names=["x"], output_names=["y"]) """
