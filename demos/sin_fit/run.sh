@@ -1,0 +1,1 @@
+python -m nnset.demos.sin_fit.train

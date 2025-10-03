@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
+from nnset.designs.mlp import MLP_Block
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -16,15 +17,9 @@ y_train = torch.from_numpy(y).to(device)
 
 # --- Generator (simple MLP) ---
 class GNet(nn.Module):
-    def __init__(self, hidden=64):
+    def __init__(self):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(1, hidden),
-            nn.ReLU(),
-            nn.Linear(hidden, hidden),
-            nn.ReLU(),
-            nn.Linear(hidden, 1)
-        )
+        self.net = MLP_Block(in_features=1, hidden_sizes=[16,32], out_features=1, activation='swish')
     def forward(self, x):
         return self.net(x)
 
@@ -149,4 +144,4 @@ def train_d_wasserstein():
 if __name__ == '__main__':
     train_g()
     # train_d_bce()
-    train_d_wasserstein()
+    # train_d_wasserstein()

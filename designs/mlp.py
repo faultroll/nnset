@@ -15,8 +15,10 @@ class MLP_Layer(nn.Module):
     def forward(self, x):
         return self.act(self.linear(x))
 
+
 # blocks/mlp_block.py
 # from layers.mlp_layer import MLP_Layer
+import torch
 import torch.nn as nn
 
 class MLP_Block(nn.Module):
