@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 from nnset.designs.mlp import MLP_Block
+import matplotlib.pyplot as plt
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -53,6 +54,17 @@ def train_g():
         optG.step()
         if (epoch+1) % 100 == 0:
             print(f"Pretrain G epoch {epoch+1}, mse={loss.item():.6f}")
+
+    """ with torch.no_grad():
+        y_pred = G(x_train).cpu().numpy()
+        y_true = y_train.cpu().numpy()
+        x_axis = x_train.cpu().numpy()
+    plt.figure(figsize=(8,4))
+    plt.plot(x_axis, y_true, label="True sin(x)", linestyle="--")
+    plt.plot(x_axis, y_pred, label="Predicted", linestyle="--")
+    plt.legend()
+    plt.show() """
+
 
 # --- adversarial train ---
 n_epochs = 2000
@@ -145,3 +157,14 @@ if __name__ == '__main__':
     train_g()
     # train_d_bce()
     # train_d_wasserstein()
+
+    """ with torch.no_grad():
+        y_pred = model(x_train)
+        print("MSE:", mse(y_pred, y_train))
+        print("MAE:", mae(y_pred, y_train))
+        print("R2 :", r2(y_pred, y_train))
+
+    # 导出 ONNX
+    dummy_input = torch.randn(1,1).to(device)
+    torch.onnx.export(model, dummy_input, "mlp_sin.onnx",
+                    input_names=["x"], output_names=["y"]) """
