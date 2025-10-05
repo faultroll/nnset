@@ -1,21 +1,17 @@
-import os, sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
-# python -m nnset.demos.sin_fit.train
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-from nnset.designs.mlp import MLP_Block
 import matplotlib.pyplot as plt
+
 from dataset import make_sin_numpy
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-x, y = make_sin_numpy()
-
-x_train = torch.from_numpy(x).to(device)
-y_train = torch.from_numpy(y).to(device)
+# python -m nnset.demos.sin_fit.train
+import os, sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+from nnset.designs.mlp import MLP_Block
+from nnset.metrics.regression import mse, mae, r2
 
 # --- Generator (simple MLP) ---
 class GNet(nn.Module):
@@ -25,6 +21,10 @@ class GNet(nn.Module):
     def forward(self, x):
         return self.net(x)
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+x, y = make_sin_numpy(n_points=400, x_range=(0, 4*np.pi))
+x_train = torch.from_numpy(x).to(device)
+y_train = torch.from_numpy(y).to(device)
 G = GNet().to(device)
 
 # --- pretrain ---
@@ -40,6 +40,7 @@ def train_g():
         if (epoch+1) % 100 == 0:
             print(f"Pretrain G epoch {epoch+1}, mse={loss.item():.6f}")
 
+def evaluate_g():
     with torch.no_grad():
         y_pred = G(x_train).cpu().numpy()
         y_true = y_train.cpu().numpy()
@@ -50,16 +51,19 @@ def train_g():
     plt.legend()
     plt.show()
 
+    print("MSE:", mse(y_pred, y_true))
+    print("MAE:", mae(y_pred, y_true))
+    print("R2 :", r2(y_pred, y_true))
+
+def export_g():
+    # --- 导出 ONNX ---
+    dummy_input = torch.randn(1,1).to(device)
+    torch.onnx.export(G, dummy_input, "outputs/mlp_sin.onnx",
+                      input_names=["x"], output_names=["y"],
+                      dynamic_axes={'x': {0: 'batch_size'}, 'y': {0: 'batch_size'}},
+                      opset_version=11)
+
 if __name__ == '__main__':
     train_g()
-
-    """ with torch.no_grad():
-        y_pred = model(x_train)
-        print("MSE:", mse(y_pred, y_train))
-        print("MAE:", mae(y_pred, y_train))
-        print("R2 :", r2(y_pred, y_train))
-
-    # 导出 ONNX
-    dummy_input = torch.randn(1,1).to(device)
-    torch.onnx.export(model, dummy_input, "outputs/mlp_sin.onnx",
-                      input_names=["x"], output_names=["y"]) """
+    evaluate_g()
+    export_g()

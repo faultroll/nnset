@@ -1,25 +1,18 @@
 
+# import torch
+import numpy as np
 
-import torch.nn.functional as F
+def mse(y_pred, y_true):
+    # return torch.nn.functional.mse_loss(y_pred, y_true).item()
+    return np.mean((y_true - y_pred) ** 2)
 
-with torch.no_grad():
-    y_pred = model(x_train)
-    mse = F.mse_loss(y_pred, y_train).item()
-print("MSE:", mse)
+def mae(y_pred, y_true):
+    # return torch.mean(torch.abs(y_pred - y_true)).item()
+    return np.mean(np.abs(y_true - y_pred))
 
-
-mae = torch.mean(torch.abs(y_pred - y_train)).item()
-print("MAE:", mae)
-
-
-ss_res = torch.sum((y_train - y_pred) ** 2)
-ss_tot = torch.sum((y_train - torch.mean(y_train)) ** 2)
-r2 = 1 - ss_res / ss_tot
-print("R²:", r2.item())
-
-
-with torch.no_grad():
-    y_pred = model(x_train)
-    print("MSE:", mse(y_pred, y_train))
-    print("MAE:", mae(y_pred, y_train))
-    print("R2 :", r2(y_pred, y_train))
+def r2(y_pred, y_true):
+    # ss_res = torch.sum((y_true - y_pred) ** 2)
+    # ss_tot = torch.sum((y_true - torch.mean(y_true)) ** 2)
+    ss_res = np.sum((y_true - y_pred) ** 2)
+    ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
+    return 1 - ss_res / ss_tot
