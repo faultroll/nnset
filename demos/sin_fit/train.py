@@ -13,6 +13,7 @@ import os, sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 from nnset.designs.mlp import MLP_Block
 from nnset.metrics.regression import mse, mae, r2
+from nnset.optims.quant import prepare_qat_model, remove_fake_quant
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -92,15 +93,25 @@ def evaluate_g():
         print("x_proj mean/std:", x_proj.mean().item(), x_proj.std().item())
         print("sin feat std:", torch.sin(x_proj).std().item(), "cos feat std:", torch.cos(x_proj).std().item()) """
 
+def optimize1_g():
+    prepare_qat_model(G, inplace=True)
+
+def optimize2_g():
+    onnx_static_quantize()
+
 def export_g():
-    # --- 导出 ONNX ---
+    remove_fake_quant(G)
+    # print(G)
     dummy_input = torch.randn(1,1).to(device)
     torch.onnx.export(G, dummy_input, "outputs/mlp_sin.onnx",
                       input_names=["x"], output_names=["y"],
                       dynamic_axes={'x': {0: 'batch_size'}, 'y': {0: 'batch_size'}},
-                      opset_version=11)
+                      opset_version=11,
+                      verbose=False)
 
 if __name__ == '__main__':
+    optimize1_g()
     train_g()
     evaluate_g()
     export_g()
+    # optimize2_g()
