@@ -14,6 +14,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.
 from nnset.designs.mlp import MLP_Block
 from nnset.metrics.regression import mse, mae, r2
 from nnset.optims.quant import prepare_qat_model, remove_fake_quant
+from nnset.optims.prune import unstructured_prune, structured_prune, remove_prune_reparam, rebuild_structured_model
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -97,7 +98,13 @@ def optimize1_g():
     prepare_qat_model(G, inplace=True)
 
 def optimize2_g():
-    onnx_static_quantize()
+    # unstructured_prune(G, inplace=True)
+    structured_prune(G, inplace=True)
+    remove_prune_reparam(G, inplace=True)
+    rebuild_structured_model(G, dummy_input=torch.randn(1,1), device=device)
+
+# def optimize3_g():
+#     onnx_static_quantize()
 
 def export_g():
     remove_fake_quant(G)
@@ -110,8 +117,9 @@ def export_g():
                       verbose=False)
 
 if __name__ == '__main__':
-    optimize1_g()
+    optimize1_g() # before training, should be called prepare xxx
     train_g()
-    evaluate_g()
+    evaluate_g() # after training, before exported, should be called what?
+    optimize2_g()
     export_g()
-    # optimize2_g()
+    # optimize3_g() # after exported, should be called what?
