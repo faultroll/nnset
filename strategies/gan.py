@@ -149,106 +149,101 @@ if __name__ == '__main__':
     # train_d_wasserstein()
 
 
-# Knowledge Distillation Loss (Logit-based)
-# Computes soft target loss between teacher and student outputs.
-
+# nnset/gans/losses.py
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class KDLoss(nn.Module):
-    # Args:
-    #     temperature (float): softmax temperature (>1 softens distributions)
-    #     alpha (float): weight for KD loss vs hard-label loss
-    #     hard_loss_fn (callable): optional supervised loss (e.g. nn.CrossEntropyLoss)
-    def __init__(self, temperature: float=4.0, alpha: float=0.5, hard_loss_fn=None):
+# 统一的对抗损失接口 (mode: 'bce'|'hinge'|'wgan-gp')
+class AdversarialLoss(nn.Module):
+    def __init__(self, mode='bce'):
         super().__init__()
-        self.T = temperature
-        self.alpha = alpha
-        self.hard_loss_fn = hard_loss_fn
-    # Args:
-    #     student_logits (Tensor): [B, C]
-    #     teacher_logits (Tensor): [B, C]
-    #     targets (Tensor): optional hard labels for supervised loss
-    def forward(self, student_logits, teacher_logits, targets=None):
-        # --- Soft targets (KL divergence) ---
-        p_student = F.log_softmax(student_logits / self.T, dim=1)
-        p_teacher = F.softmax(teacher_logits / self.T, dim=1)
-        kd_loss = F.kl_div(p_student, p_teacher, reduction='batchmean') * (self.T ** 2)
-        # --- Hard targets (optional supervised) ---
-        if targets is not None and self.hard_loss_fn is not None:
-            hard_loss = self.hard_loss_fn(student_logits, targets)
-            return self.alpha * hard_loss + (1 - self.alpha) * kd_loss
-        else:
-            return kd_loss
+        assert mode in ('bce','hinge','wgan-gp')
+        self.mode = mode
+        if mode == 'bce':
+            self.criterion = nn.BCELoss()
+    def d_loss(self, d_real, d_fake):
+        if self.mode == 'bce':
+            real_labels = torch.ones_like(d_real)
+            fake_labels = torch.zeros_like(d_fake)
+            return self.criterion(d_real, real_labels) + self.criterion(d_fake, fake_labels)
+        if self.mode == 'hinge':
+            # hinge loss for D: mean(max(0,1 - D(x))) + mean(max(0,1 + D(G(z))))
+            loss_real = F.relu(1.0 - d_real).mean()
+            loss_fake = F.relu(1.0 + d_fake).mean()
+            return loss_real + loss_fake
+        if self.mode == 'wgan-gp':
+            # WGAN (D aims to maximize real - fake) -> return -(mean(real)-mean(fake)) as minimization
+            return -(d_real.mean() - d_fake.mean())
 
-# strategies/self_distill.py
-from nnset.optims.distill.kd_loss import KDLoss
+    def g_loss(self, d_fake):
+        if self.mode == 'bce':
+            real_labels = torch.ones_like(d_fake)
+            return self.criterion(d_fake, real_labels)
+        if self.mode == 'hinge':
+            return -d_fake.mean()
+        if self.mode == 'wgan-gp':
+            return -d_fake.mean()
 
-def self_distill_hook(student, teacher, batch, cfg):
-    kd = KDLoss(temperature=cfg.distill.T, alpha=cfg.distill.alpha)
-    student_logits = student(batch.x)
-    with torch.no_grad():
-        teacher_logits = teacher(batch.x)
-    loss = kd(student_logits, teacher_logits, batch.y)
-    return loss
+def reconstruction_loss(pred, target, mode='mse'):
+    if mode == 'mse':
+        return F.mse_loss(pred, target)
+    if mode == 'l1':
+        return F.l1_loss(pred, target)
 
-
-# nnset/optims/distill/kd_base.py
+# nnset/gans/strategy.py
 import torch
-import torch.nn.functional as F
 
-class KDParams:
-    # 只有logit要软标签
-    def __init__(self, temperature=4.0, alpha=0.5):
-        self.T = temperature
-        self.alpha = alpha
-    def soft_targets(self, logits):
-        return F.softmax(logits / self.T, dim=1)
-    def hard_soft_mix(self, student_logits, teacher_logits, targets):
-        p_student = F.log_softmax(student_logits / self.T, dim=1)
-        p_teacher = self.soft_targets(teacher_logits)
-        soft_loss = F.kl_div(p_student, p_teacher, reduction='batchmean') * (self.T ** 2)
-        hard_loss = F.cross_entropy(student_logits, targets)
-        return self.alpha * hard_loss + (1 - self.alpha) * soft_loss
-
-    # Feature / Attention / Relational 的辅助函数
-    @staticmethod
-    def mse_loss(x, y):
-        return F.mse_loss(x, y)
-
-    @staticmethod
-    def cosine_loss(x, y):
-        x_norm = F.normalize(x, dim=-1)
-        y_norm = F.normalize(y, dim=-1)
-        return 1 - (x_norm * y_norm).sum(dim=-1).mean()
-
-# strategies/self_distill.py
-from nnset.optims.distill.kd_base import KDParams
-
-def self_distill_hook(student_outputs, teacher_outputs, targets=None, kd_params=None, kd_type="logit"):
+class GANTrainingStrategy:
     """
-    student_outputs / teacher_outputs 可以是 logits 或 feature
+    封装 D-step / G-step 流程
+    cfg 包含: n_epochs,n_critic,lambda_rec,lambda_adv,device,adv_mode,recon_mode
     """
-    if kd_type == "logit":
-        return kd_params.hard_soft_mix(student_outputs, teacher_outputs, targets)
+    def __init__(self, G, D, optimG, optimD, dataloader, cfg, adv_loss):
+        self.G, self.D = G, D
+        self.optG, self.optD = optimG, optimD
+        self.dataloader = dataloader
+        self.cfg = cfg
+        self.adv_loss = adv_loss
 
-    elif kd_type == "feature":
-        # student_outputs, teacher_outputs: [B, C, H, W] 或 [B, D]
-        return kd_params.mse_loss(student_outputs, teacher_outputs)
+    def train(self):
+        device = self.cfg.device
+        G, D = self.G.to(device), self.D.to(device)
+        for epoch in range(self.cfg.n_epochs):
+            for i, batch in enumerate(self.dataloader):
+                x = batch['x'].to(device)
+                y = batch['y'].to(device)
 
-    elif kd_type == "attention":
-        # 假设 student_outputs, teacher_outputs 是注意力图 [B, N, N]
-        return kd_params.cosine_loss(student_outputs, teacher_outputs)
+                # --- D steps ---
+                for _ in range(self.cfg.n_critic):
+                    self.optD.zero_grad()
+                    with torch.no_grad():
+                        y_fake = self.G(x)
+                    d_real = self.D(torch.cat([x, y], dim=1))
+                    d_fake = self.D(torch.cat([x, y_fake], dim=1))
+                    loss_D = self.adv_loss.d_loss(d_real, d_fake)
+                    # optional: add gradient penalty for wgan-gp externally
+                    loss_D.backward()
+                    self.optD.step()
 
-    elif kd_type == "relational":
-        # relational: student_features, teacher_features
-        # 计算 pairwise cosine 矩阵
-        s = F.normalize(student_outputs, dim=-1)
-        t = F.normalize(teacher_outputs, dim=-1)
-        rel_s = s @ s.transpose(-1, -2)
-        rel_t = t @ t.transpose(-1, -2)
-        return kd_params.mse_loss(rel_s, rel_t)
+                # --- G step ---
+                self.optG.zero_grad()
+                y_gen = self.G(x)
+                d_gen = self.D(torch.cat([x, y_gen], dim=1))
+                adv_term = self.adv_loss.g_loss(d_gen)
+                rec_term = reconstruction_loss(y_gen, y, mode=self.cfg.recon_mode)
+                loss_G = self.cfg.lambda_rec * rec_term + self.cfg.lambda_adv * adv_term
 
-    else:
-        raise ValueError(f"Unknown KD type {kd_type}")
+                # 插入蒸馏 hook（如果存在）
+                if hasattr(self, 'distill_hook') and self.distill_hook is not None:
+                    loss_G = loss_G + self.distill_hook(self.G, x, y, self.cfg)
+
+                loss_G.backward()
+                self.optG.step()
+
+            if epoch % self.cfg.log_interval == 0:
+                print(f"Epoch {epoch}: rec={rec_term.item():.6f}, D={loss_D.item():.6f}, G={loss_G.item():.6f}")
+
+    def set_distill_hook(self, hook_fn):
+        """hook_fn(G,x,y,cfg) -> extra_loss"""
+        self.distill_hook = hook_fn
