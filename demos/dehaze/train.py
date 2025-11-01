@@ -28,6 +28,13 @@ from torch.utils.data import DataLoader
 import torch.optim as optim
 import network as N
 
+# python -m nnset.demos.dehaze.train
+import os, sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+from nnset.metrics.complexity import torchflops
+from nnset.optims.quant import prepare_qat_model, remove_fake_quant
+from nnset.optims.prune import unstructured_prune, structured_prune, remove_prune_reparam, rebuild_structured_model
+
 def init_weights(m):
     if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
         for name, param in m.named_parameters():
@@ -71,7 +78,22 @@ def train():
                         'J_pred': {0: 'batch_size', 2: 'height', 3: 'width'}
                     },
                     opset_version=11)
-    # flops = M.torchflops(model, input_dict['I'])
+    flops = torchflops(model, input_dict['I'])
+
+# 1. prune
+def optimize1():
+    # unstructured_prune(model, inplace=True)
+    structured_prune(model, inplace=True)
+    remove_prune_reparam(model, inplace=True)
+    rebuild_structured_model(model, dummy_input=torch.randn(1, 3, 640, 480), device=device)
+# 2. quant(qat)
+def optimize2():
+    prepare_qat_model(model, inplace=True)
+    # train, self-distill
+# 3. quant(ptq)
+# def optimize3():
+#     remove_fake_quant(model) # for onnx export
+#     onnx_static_quantize(model)
 
 if __name__ == '__main__':
     train()
