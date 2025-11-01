@@ -34,3 +34,14 @@ class LightDehazeNet(nn.Module):
         dehaze_image = self.relu((conv_layer8 * I) - conv_layer8 + 1) 
         #J(x) = clean_image, k(x) = x8, I(x) = x, b = 1
         return dehaze_image
+
+
+# loss
+import torch
+import torch.nn as nn
+
+class LightDehazeLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+    def forward(self, J_pred, J_gt):
+        return nn.functional.mse_loss(J_pred, J_gt)

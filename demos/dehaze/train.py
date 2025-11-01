@@ -16,7 +16,7 @@ class DehazeDataset(Dataset):
         J_gt_pil = Image.open(gt_path).convert('RGB')
         I_np = np.array(I_pil).astype(np.float32) / 255.0       # [H,W,3]
         J_gt_np = np.array(J_gt_pil).astype(np.float32) / 255.0 # [H,W,3]
-        I = torch.from_numpy(I_np).permute(2, 0, 1)           # [3,H,W]
+        I = torch.from_numpy(I_np).permute(2, 0, 1)             # [3,H,W]
         J_gt = torch.from_numpy(J_gt_np).permute(2, 0, 1)       # [3,H,W]
         return I, J_gt
 
@@ -39,11 +39,11 @@ def init_weights(m):
 def train():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = N.LightDehazeNet().to(device)
-    model.apply(init_weights)
-    criterion = nn.MSELoss().to(device)
+    criterion = N.LightDehazeLoss().to(device) # nn.MSELoss().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
     train_dataset = DehazeDataset('./test-images/split_txt/train.txt')
     train_loader  = DataLoader(train_dataset, batch_size=1, shuffle=True)
+    model.apply(init_weights)
     for epoch in range(1, 31):
         model.train()
         optimizer.zero_grad()
@@ -71,7 +71,7 @@ def train():
                         'J_pred': {0: 'batch_size', 2: 'height', 3: 'width'}
                     },
                     opset_version=11)
-    flops = M.torchflops(model, input_dict['I'])
+    # flops = M.torchflops(model, input_dict['I'])
 
 if __name__ == '__main__':
     train()
