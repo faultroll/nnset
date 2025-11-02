@@ -30,9 +30,13 @@ def remove_prune_reparam(model, inplace=False):
     if not inplace:
         model = copy.deepcopy(model)
     for name, module in model.named_modules():
-        for pname, _ in module.named_parameters(recurse=False):
-            if 'mask' in pname:
-                prune.remove(module, pname.replace('_mask',''))
+        # for pname, _ in module.named_parameters(recurse=False):
+        #     if 'mask' in pname:
+        #         prune.remove(module, pname.replace('_mask',''))
+        if isinstance(module, torch.nn.Conv2d):
+            prune.remove(module, name='weight')
+        elif isinstance(module, torch.nn.Linear):
+            prune.remove(module, name='weight')
     return model
 
 # 针对结构化剪枝后，生成新的模型结构
