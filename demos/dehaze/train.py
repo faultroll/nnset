@@ -32,7 +32,7 @@ import network as N
 import os, sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 from nnset.metrics.complexity import torchflops
-from nnset.optims.quant import prepare_qat_model, remove_fake_quant
+from nnset.optims.quant import prepare_qat_model, convert_qat_model, remove_fake_quant
 from nnset.optims.prune import unstructured_prune, structured_prune, remove_prune_reparam, rebuild_structured_model
 # from nnset.strategies.distill import distill_hook
 
@@ -82,10 +82,10 @@ def export(model, device):
 
 def train2(model_pruned, model_origin, device):
     criterion = N.LightDehazeLoss().to(device) # nn.MSELoss().to(device)
-    optimizer = torch.optim.Adam(model_pruned.parameters(), lr=1e-2)
-    train_dataset = DehazeDataset('./test-images/split_txt/val.txt')
+    optimizer = torch.optim.Adam(model_pruned.parameters(), lr=1e-2) # reduced
+    train_dataset = DehazeDataset('./test-images/split_txt/val.txt') # validate
     train_loader  = DataLoader(train_dataset, batch_size=1, shuffle=True)
-    for epoch in range(1, 31):
+    for epoch in range(1, 31): # reduced
         model_pruned.train()
         optimizer.zero_grad()
         avg_loss = 0
@@ -119,6 +119,7 @@ def optimize2(model_pruned, model_origin, device):
     prepare_qat_model(model_pruned, inplace=True)
     # train, 'self'-distill
     train2(model_pruned, model_origin, device)
+    convert_qat_model(model_pruned, inplace=True)
     remove_fake_quant(model_pruned) # for onnx export
 # 3. quant(ptq)
 # def optimize3(model, device):

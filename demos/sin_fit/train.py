@@ -13,7 +13,7 @@ import os, sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 from nnset.designs.mlp import MLP_Block
 from nnset.metrics.regression import mse, mae, r2
-from nnset.optims.quant import prepare_qat_model, remove_fake_quant
+from nnset.optims.quant import prepare_qat_model, convert_qat_model, remove_fake_quant
 from nnset.optims.prune import unstructured_prune, structured_prune, remove_prune_reparam, rebuild_structured_model
 
 
@@ -107,6 +107,7 @@ def optimize2_g():
 #     onnx_static_quantize()
 
 def export_g():
+    convert_qat_model(G, inplace=True)
     remove_fake_quant(G)
     # print(G)
     dummy_input = torch.randn(1,1).to(device)

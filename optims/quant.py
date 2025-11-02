@@ -113,24 +113,49 @@ warnings.filterwarnings("ignore", message="_aminmax is deprecated")
 
 
 # Returns a model prepared for QAT (with fake-quant nodes).
-def prepare_qat_model(model, backend='fbgemm', inplace=False):
+def prepare_qat_model(model, backend='qnnpack', inplace=False):
     if not inplace:
         model = copy.deepcopy(model)
     model.train()
-    # qconfig = get_default_qat_qconfig(backend) # 'qnnpack': arm, 'fbgemm': x86
-    from torch.ao.quantization import QConfig, MovingAverageMinMaxObserver, FakeQuantize
-    custom_fake_quant = FakeQuantize.with_args(
-        observer=MovingAverageMinMaxObserver,
-        quant_min=-128,
-        quant_max=127,
-        dtype=torch.qint8,
-        qscheme=torch.per_tensor_symmetric,
-        reduce_range=False, # True: qint8 范围由 [-128,127] 缩减为 [-64,63] 避免累加溢出
-    )
-    qconfig = QConfig(
-        activation=custom_fake_quant,
-        weight=custom_fake_quant,
-    )
+    # 1. default
+    qconfig = get_default_qat_qconfig(backend) # 'qnnpack': arm, 'fbgemm': x86
+    # 2. user
+    # from torch.ao.quantization import QConfig, FakeQuantize
+    # from torch.ao.quantization import MovingAverageMinMaxObserver, PerChannelMinMaxObserver
+    # from torch.ao.quantization import default_observer, default_per_channel_weight_fake_quant
+    # 2.1 
+    # custom_fake_quant = FakeQuantize.with_args(
+    #     observer=MovingAverageMinMaxObserver,
+    #     quant_min=-128,
+    #     quant_max=127,
+    #     dtype=torch.qint8,
+    #     qscheme=torch.per_tensor_symmetric,
+    #     reduce_range=False, # True: qint8 范围由 [-128,127] 缩减为 [-64,63] 避免累加溢出
+    # )
+    # qconfig = QConfig(
+    #     activation=custom_fake_quant,
+    #     weight=custom_fake_quant,
+    # )
+    # 2.2 
+    # # per-tensor asymmetric
+    # activation_observer = MovingAverageMinMaxObserver.with_args(
+    #     dtype=torch.quint8,
+    #     qscheme=torch.per_tensor_affine,
+    # )
+    # # per-channel symmetric
+    # weight_observer = PerChannelMinMaxObserver.with_args(
+    #     dtype=torch.qint8,
+    #     qscheme=torch.per_channel_symmetric,   # 
+    #     ch_axis=0,                             # 通常为输出通道
+    # )
+    # qconfig = QConfig(
+    #     activation=FakeQuantize.with_args(observer=activation_observer),
+    #     weight=FakeQuantize.with_args(observer=weight_observer)
+    # )
+    # 2.3
+    # activation_observer = default_observer
+    # weight_observer = default_per_channel_weight_fake_quant
+    # qconfig = QConfig(activation=activation_observer, weight=weight_observer)
     model.qconfig = qconfig
     prepare_qat(model, inplace=True)  # inplace wraps modules with FakeQuant
     return model
